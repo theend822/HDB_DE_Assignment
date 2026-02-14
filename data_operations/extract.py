@@ -35,17 +35,14 @@ def fetch_and_save_from_api(resource_id: str, output_dir: str = RAW_DATA_DIR) ->
 
     # Fetch all pages
     while True:
-        params = {
-            "resource_id": resource_id,
-            "limit": RECORDS_PER_REQUEST,
-            "offset": offset
-        }
+        # Build URL with resource_id
+        url = f"{API_BASE_URL}?resource_id={resource_id}&limit={RECORDS_PER_REQUEST}&offset={offset}"
 
         if API_KEY:
-            params["api_key"] = API_KEY
+            url += f"&api_key={API_KEY}"
 
         try:
-            response = requests.get(API_BASE_URL, params=params, timeout=REQUEST_TIMEOUT)
+            response = requests.get(url, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             data = response.json()
 
