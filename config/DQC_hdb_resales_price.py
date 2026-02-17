@@ -7,7 +7,7 @@ DQ_CHECKS = {
 
     "null": [
         "month", "town", "flat_type", "block", "street_name",
-        "storey_range", "floor_area_sqm", "flat_model",
+        "storey_range", "floor_area", "flat_model",
         "lease_commence_date", "resale_price",
     ],
 
@@ -45,12 +45,12 @@ DQ_CHECKS = {
 
 }
 
-# Duplicate check — separate task (not looped)
+# Duplicate check
 DUPLICATE_CHECK = {
     "key_columns": None,       # None = all columns except resale_price
 }
 
-# Resale price outlier check — separate task (not looped)
+# Resale price outlier check
 # Within each group, flag rows where resale_price deviates > 20% from group mean
 RESALE_PRICE_OUTLIER_CHECK = {
     "column": "resale_price",
