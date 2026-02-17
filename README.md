@@ -1,385 +1,126 @@
-# HDB Resale Flat Prices ETL Pipeline
-
-**Senior Data Engineer Technical Test**
-
-A production-ready ETL pipeline for processing HDB resale flat price data (2012-2016) from data.gov.sg, implementing clean architecture and best practices.
+# HDB Resale Prices ETL Pipeline
 
 ---
 
-## 📐 Design Philosophy
+## Design Philosophy
 
-This project follows **separation of concerns** and **configuration-driven** principles:
+Keep the DAG dumb, keep the code clean, keep the config honest.
 
-1. **No Business Logic in DAG**: Airflow DAG contains only task definitions with `op_kwargs`
-2. **Function-Based Operations**: Pure functions in `data_operations/` for all logic
-3. **Configuration-Driven Validation**: DQ checks defined in config, DAG loops to create tasks
-4. **File-Based Data Passing**: Clear staging pattern without database dependency
+- The DAG only wires tasks together — no logic, no conditionals, no function definitions
+- All business logic lives in `data_operations/`, independently testable and reusable
+- Config drives what checks run and on which columns — adding a check means editing config, not code
+- Every stage writes to CSV so intermediate results are always inspectable
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-hdb_technical_test/
+HDB/
 ├── config/
-│   ├── api_config.py           # API endpoints, resource IDs, file paths
-│   └── validation_rules.py     # DQ checks configuration
+│   ├── CONFIG_hdb_resales_price.py   # API config, dataset IDs, folder paths
+│   └── DQC_hdb_resales_price.py      # DQ check rules (DQ_CHECKS, DUPLICATE_CHECK, RESALE_PRICE_OUTLIER_CHECK)
 │
 ├── data_operations/
-│   ├── extract.py              # fetch_and_save_from_api(), merge_raw_files(), extract_and_merge()
-│   ├── validate.py             # check_null(), check_categorical(), check_outliers(), etc.
-│   └── transform.py            # calculate_remaining_lease(), create_resale_identifier(), hash_identifiers()
+│   ├── extract.py                    # fetch_and_save_from_api(), merge_raw_files()
+│   ├── validate.py                   # check_*() functions, separate_valid_failed()
+│   └── transform.py                  # calculate_remaining_lease(), create_resale_identifier(), hash_identifiers()
 │
 ├── dags/
-│   └── hdb_etl_pipeline.py     # Clean DAG - loops over DQ_CHECKS
+│   └── hdb_resales_price.py          # Airflow DAG — task definitions only, no business logic
 │
 ├── notebooks/
-│   └── exploration.ipynb       # Exploratory data analysis
+│   └── exploration.ipynb             # Prototype before migrating to data_operations/
 │
-├── data/
-│   ├── raw/                    # Individual API files + merged_raw.csv
-│   ├── stage/                  # validated.csv + profile.json
-│   ├── prod/                   # transformed.csv + hashed.csv
-│   └── failed/                 # failed_records.csv
-│
-├── .env.example
-├── .gitignore
-├── requirements.txt
-└── README.md
+└── data/
+    ├── raw/                          # Per-dataset CSVs + merged_raw.csv
+    ├── stage/                        # validated.csv + dqc_results/ (one file per check)
+    ├── prod/                         # transformed.csv + hashed.csv
+    └── failed/                       # non_valid_records.csv
 ```
 
 ---
 
-## 🔄 Data Flow & File-Based Passing
+## Overall Design
 
-### Why File-Based?
-Since this assignment doesn't require a database, we use a **clear staging pattern** with CSV files:
+### a. Data Flow
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  EXTRACT & MERGE                                            │
-│  - Fetch from API → data/raw/raw_hdb_*.csv                  │
-│  - Merge all → data/raw/merged_raw.csv                      │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  PROFILE & VALIDATE                                         │
-│  - Generate profile → data/stage/profile.json               │
-│  - Run DQ checks (looped tasks)                             │
-│  - Check duplicates & outliers                              │
-│  - Separate → data/stage/validated.csv                      │
-│              data/failed/failed_records.csv                 │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  TRANSFORM                                                  │
-│  - Read: data/stage/validated.csv                           │
-│  - Transform → data/prod/transformed.csv (plain IDs)        │
-│               data/prod/hashed.csv (hashed IDs)             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Data Passing Strategy
-
-| Stage | Reads From | Writes To | Why |
-|-------|------------|-----------|-----|
-| **Extract** | API | `raw/raw_hdb_*.csv`, `raw/merged_raw.csv` | Preserve individual API responses + merged dataset |
-| **Validate** | `raw/merged_raw.csv` | `stage/validated.csv`, `failed/failed_records.csv` | Separate valid/failed records |
-| **Transform** | `stage/validated.csv` | `prod/transformed.csv`, `prod/hashed.csv` | Final outputs |
-
-**Benefits:**
-- ✅ Easy to inspect data at any stage
-- ✅ Rerun individual stages independently
-- ✅ No database setup required
-- ✅ Production-ready pattern (works with S3/HDFS)
-
----
-
-## 🎯 Key Design Decisions
-
-### 1. Simplified extract.py
-
-**Three functions only:**
-```python
-fetch_and_save_from_api(resource_id)  # Fetch one resource, save to CSV
-merge_raw_files(raw_dir)               # Merge all raw CSVs
-extract_and_merge(raw_dir)             # Main function: calls both above
-```
-
-**Why?**
-- Clear, straightforward flow
-- `extract_and_merge()` is what DAG calls
-- No complex class hierarchies
-
-### 2. Simplified transform.py
-
-**Three transformations only:**
-```python
-calculate_remaining_lease(df)      # Transformation 1
-create_resale_identifier(df)       # Transformation 2 (all digit extraction embedded)
-hash_identifiers(df)                # Transformation 3
-```
-
-**Why?**
-- Each function = one transformation
-- All helper logic (extract_block_digits, etc.) embedded in `create_resale_identifier()`
-- No separate utility functions cluttering the module
-
-### 3. Individual Check Functions in validate.py
-
-**Each check is a separate function:**
-```python
-check_null(df, column, allow_null)
-check_categorical(df, column, allowed_values)
-check_date_range(df, column, min_date, max_date)
-check_duplicates(df, key_columns, strategy)
-check_outliers(df, column, method, threshold, group_by)
-separate_valid_failed(input_file, validation_results)
-```
-
-**Why?**
-- DAG can call individual checks as tasks
-- Easy to add new check types
-- Each check returns boolean Series (True = valid)
-
-### 4. Configuration-Driven DQ Checks
-
-**In `config/validation_rules.py`:**
-```python
-DQ_CHECKS = {
-    "null": {
-        "resale_price": {"allow_null": False},
-        "town": {"allow_null": False},
-    },
-    "categorical": {
-        "town": {"allowed_values": []},  # Populated from profile
-        "flat_type": {"allowed_values": []},
-    },
-    "date_range": {
-        "month": {"min_date": None, "max_date": None},
-    },
-}
-```
-
-**DAG loops over this:**
-```python
-dq_tasks = []
-for check_type, check_config in DQ_CHECKS.items():
-    for column, params in check_config.items():
-        dq_task = PythonOperator(
-            task_id=f"dq_check_{check_type}_{column}",
-            python_callable=validate_data,
-            op_kwargs={
-                "input_file": f"{RAW_DATA_DIR}/merged_raw.csv",
-                "check_name": check_type,
-                "column": column,
-                **params
-            },
-            dag=dag,
-        )
-        dq_tasks.append(dq_task)
-```
-
-**Benefits:**
-- ✅ Add new checks by editing config only
-- ✅ DAG automatically creates tasks
-- ✅ Clean separation of what (config) vs how (code)
-
-### 5. Separate Valid/Failed as Own Task
-
-Instead of mixing validation with separation, we have:
-1. Individual DQ check tasks (return boolean Series)
-2. **Separate task**: `separate_valid_failed()`
-   - Combines all validation results
-   - Splits into `validated.csv` + `failed_records.csv`
-
-**Why?**
-- Clear responsibility separation
-- Failed records tracked with reasons
-- Easier to debug which checks failed
-
----
-
-## 📊 ETL Pipeline Tasks
-
-### Task Flow in DAG
+Each stage reads from CSV and writes to CSV. No database required.
 
 ```
-extract_and_merge
-       ↓
-  generate_profile
-       ↓
-   ┌───┴────────────────────────────┐
-   │                                │
-DQ Checks (looped)          Duplicate Check
-   │                                │
-   │                         Outlier Check
-   │                                │
-   └───┬────────────────────────────┘
-       ↓
-separate_valid_failed
-       ↓
-  transform_data
+API
+ ↓
+data/raw/{name}.csv          ← one file per dataset (5 total)
+ ↓
+data/raw/merged_raw.csv      ← all datasets merged
+ ↓
+data/stage/dqc_results/      ← one 0/1 result file per DQC check (parallel)
+ ↓
+data/stage/validated.csv     ← rows that passed all checks
+data/failed/non_valid_records.csv
+ ↓
+data/prod/transformed.csv    ← with remaining_lease + resale_identifier
+data/prod/hashed.csv         ← with resale_identifier_hash instead
 ```
 
-### Task Breakdown
+This makes every intermediate result inspectable and lets any stage be re-run independently.
 
-| Task | Function | Input | Output |
-|------|----------|-------|--------|
-| `extract_and_merge` | `extract_and_merge()` | API | `raw/merged_raw.csv` |
-| `generate_profile` | `generate_profile()` | `raw/merged_raw.csv` | `stage/profile.json` |
-| `dq_check_null_*` (looped) | `validate_data()` | `raw/merged_raw.csv` | Boolean Series |
-| `dq_check_categorical_*` (looped) | `validate_data()` | `raw/merged_raw.csv` | Boolean Series |
-| `dq_check_date_range_*` (looped) | `validate_data()` | `raw/merged_raw.csv` | Boolean Series |
-| `check_duplicates` | `validate_data()` | `raw/merged_raw.csv` | Boolean Series |
-| `check_outliers` | `validate_data()` | `raw/merged_raw.csv` | Boolean Series |
-| `separate_valid_failed` | `separate_valid_failed()` | Combined results | `stage/validated.csv` + `failed/failed_records.csv` |
-| `transform_data` | `transform_data()` | `stage/validated.csv` | `prod/transformed.csv` + `prod/hashed.csv` |
+### b. DAG
 
----
-
-## 🔐 Configuration Management
-
-### API Configuration (`config/api_config.py`)
+The DAG has four logical blocks — all task definitions first, dependencies at the end:
 
 ```python
-API_BASE_URL = "https://data.gov.sg/api/action/datastore_search"
-API_KEY = os.getenv("DATA_GOV_SG_API_KEY", None)  # From .env
+# Block 1: Extract
+download_tasks = [...]   # 5 parallel download tasks, one per dataset
+merge_task               # waits for all downloads
 
-RESOURCE_IDS = [
-    "1b702208-44bf-4829-b620-4615ee19b57c",  # 2012-2014
-    "83b2fc37-ce8c-4df4-968b-370fd818138b",  # 2015-2016
-]
+# Block 2: DQC
+dqc_tasks = [...]        # auto-generated from DQ_CHECKS config
+check_duplicates_task
+check_outlier_task
 
-RAW_DATA_DIR = "data/raw"
-STAGE_DATA_DIR = "data/stage"
-PROD_DATA_DIR = "data/prod"
-FAILED_DATA_DIR = "data/failed"
+# Block 3: Separate and transform
+separate_task
+transform_task
+
+# Dependencies
+download_tasks >> merge_task >> all_dqc >> separate_task >> transform_task
 ```
 
-### Validation Rules (`config/validation_rules.py`)
-
-- **DQ_CHECKS**: Loopable checks (null, categorical, date_range)
-- **DUPLICATE_CHECK**: Separate check config
-- **OUTLIER_CHECK**: Separate check config
-- **populate_rules_from_profile()**: Dynamically populate from data profile
+Separating task definitions from dependency wiring makes both easier to read and change.
 
 ---
 
-## 🏗️ Best Practices Implemented
+## Design Considerations
 
-### Clean DAG Pattern
-- ✅ **Zero function definitions**: Only `PythonOperator` tasks
-- ✅ **Loop for DQ checks**: Auto-generate tasks from config
-- ✅ **op_kwargs pattern**: All parameters passed declaratively
+### a. Separation of Concerns
 
-### File-Based Data Passing
-- ✅ **Clear stages**: raw → stage → prod → failed
-- ✅ **Inspectable**: Easy to check intermediate results
-- ✅ **Rerunnable**: Re-run any stage independently
+The DAG contains zero business logic — only `PythonOperator` definitions with `op_kwargs`. All logic lives in `data_operations/`. The config files drive what runs; the code defines how.
 
-### Modular Functions
-- ✅ **Single responsibility**: Each function does one thing
-- ✅ **Pure functions**: No side effects, testable
-- ✅ **Embedded logic**: Helper functions inside main functions
+One pipeline = three files, all sharing the same `_{pipeline_name}` suffix:
 
-### Configuration-Driven
-- ✅ **DQ checks in config**: Add checks without code changes
-- ✅ **Dynamic rules**: Populated from data profile
-- ✅ **Environment variables**: API keys in `.env`
+| Prefix | File | Purpose |
+|--------|------|---------|
+| *(none)* | `dags/hdb_resales_price.py` | Airflow task definitions |
+| `DQC_` | `config/DQC_hdb_resales_price.py` | DQ check rules |
+| `CONFIG_` | `config/CONFIG_hdb_resales_price.py` | API config and paths |
 
-### Data Engineering
-- ✅ **Composite key deduplication**: Keep higher price
-- ✅ **Multi-method outlier detection**: IQR + Z-score
-- ✅ **Audit trail**: Failed records with reasons
-- ✅ **Data lineage**: Clear trail from raw to prod
+Adding a new pipeline means adding one file per prefix.
 
----
+### b. Naming Convention
 
-## 🚀 Running the Pipeline
+Task variables use `_task` as suffix (`merge_task`, `separate_task`) to distinguish them from plain Python objects. Task IDs mirror the function or check they call (`check_duplicates`, `null__month`, `download_1990_1999`).
 
-### Option 1: Jupyter Notebook (Exploration)
+### c. Config-Driven Pipeline
 
-```bash
-jupyter notebook notebooks/exploration.ipynb
-# Explore data, test transformations
-```
+DQ checks are defined entirely in `DQC_hdb_resales_price.py`. The DAG loops over `DQ_CHECKS` and auto-generates one Airflow task per `(check_type, column)` pair — no manual task creation needed when a new check is added.
 
-### Option 2: Direct Execution (Development)
+The two standalone checks (duplicates, outlier) follow the same pattern: their parameters come from `DUPLICATE_CHECK` and `RESALE_PRICE_OUTLIER_CHECK` and are passed directly as `op_kwargs` via `**unpacking`. The DAG never needs to know what the parameters mean.
 
-```python
-from data_operations.extract import extract_and_merge
-from data_operations.validate import generate_profile, separate_valid_failed
-from data_operations.transform import transform_data
+### d. `fail_sum` Across Parallel DQC Tasks
 
-# Run pipeline
-extract_and_merge(raw_dir="data/raw")
-generate_profile(input_file="data/raw/merged_raw.csv", output_file="data/stage/profile.json")
-# ... run individual checks ...
-separate_valid_failed(input_file="data/raw/merged_raw.csv", validation_results=...)
-transform_data(input_file="data/stage/validated.csv")
-```
+Each DQC check runs as a separate Airflow task in parallel on the same static `merged_raw.csv`. Writing to a shared file concurrently would cause race conditions.
 
-### Option 3: Airflow (Production)
+The solution: each check writes its own 0/1 result column (1 = row failed) to a uniquely named file in `stage/dqc_results/`. The `separate_valid_failed` task then reads all result files and sums them row-by-row — any row with `fail_sum > 0` failed at least one check and goes to `non_valid_records.csv`.
 
-```bash
-# Initialize
-airflow db init
-
-# Copy DAG
-cp dags/hdb_etl_pipeline.py ~/airflow/dags/
-
-# Start services
-airflow webserver &
-airflow scheduler &
-
-# Trigger
-airflow dags trigger hdb_resale_etl
-```
-
----
-
-## 📦 Installation
-
-```bash
-# Clone repository
-git clone <repo-url>
-cd hdb_technical_test
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment (optional)
-cp .env.example .env
-# Edit .env if you have API keys
-```
-
----
-
-## 📝 Assignment Requirements Coverage
-
-| Requirement | Implementation | File |
-|-------------|----------------|------|
-| Programmatic extraction | ✅ API-based, no manual downloads | `extract.py` |
-| Combine datasets | ✅ `merge_raw_files()` | `extract.py` |
-| Data profiling | ✅ `generate_profile()` | `validate.py` |
-| Validation rules | ✅ Dynamic from profile | `validate.py`, `validation_rules.py` |
-| Duplicate handling | ✅ Composite key, keep higher price | `validate.py::check_duplicates()` |
-| Remaining lease | ✅ 99-year, rounded down | `transform.py::calculate_remaining_lease()` |
-| Resale Identifier | ✅ Multi-step logic embedded | `transform.py::create_resale_identifier()` |
-| SHA-256 hashing | ✅ Irreversible with uniqueness check | `transform.py::hash_identifiers()` |
-| Anomaly detection | ✅ IQR + Z-score, grouped | `validate.py::check_outliers()` |
-| Output datasets | ✅ raw, stage, prod, failed | All modules |
-| Jupyter notebook | ✅ Exploration-focused | `notebooks/exploration.ipynb` |
-| Airflow DAG | ✅ Clean, looped DQ checks | `dags/hdb_etl_pipeline.py` |
-| Best practices | ✅ Modular, documented, maintainable | All files |
-
----
-
-**Built with clean architecture for HDB Data Engineering Team**
+This gives a clean audit trail: each result file shows exactly which rows failed which check.
