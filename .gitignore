@@ -1,79 +1,24 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.pyc
 
-# Virtual Environments
+# Virtual environment
+.venv/
 venv/
-env/
-ENV/
-.venv
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb_checkpoints/
+# Jupyter
+.ipynb_checkpoints/
 
-# Data Files (Large CSV files)
-# Uncomment if you don't want to commit data files
-# data/raw/*.csv
-# data/cleaned/*.csv
-# data/failed/*.csv
+# Environment variables
+.env
 
-# Keep directory structure
-!data/raw/.gitkeep
-!data/cleaned/.gitkeep
-!data/failed/.gitkeep
+# API key files
+dgs-*.txt
 
 # Airflow
 airflow.db
 airflow.cfg
 logs/
-*.log
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Environment variables
-.env
-.env.local
 
 # OS
-Thumbs.db
-
-# Assignment document (per requirements)
-*Technical?Test*.pdf
-*technical?test*.pdf
-Data?Engineering?Technical?Test.pdf
+.DS_Store
