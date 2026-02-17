@@ -1,12 +1,11 @@
 """
 HDB Resale Prices ETL Pipeline
-Clean DAG — no business logic, only task definitions
 """
 
 from datetime import timedelta
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
+from airflow import DAG  # type: ignore
+from airflow.operators.python import PythonOperator  # type: ignore
+from airflow.utils.dates import days_ago  # type: ignore
 import sys
 import os
 

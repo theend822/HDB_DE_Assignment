@@ -1,6 +1,5 @@
 """
-API Configuration for data.gov.sg
-Contains API endpoints and resource IDs
+Config for HDB Resale Prices
 """
 
 import os

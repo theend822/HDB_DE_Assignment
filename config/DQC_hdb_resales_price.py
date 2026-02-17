@@ -1,7 +1,5 @@
 """
 Data Quality Check Configuration for HDB Resale Prices
-Defines what checks to run on which columns.
-DAG loops over DQ_CHECKS to auto-generate tasks.
 """
 
 # DQ_CHECKS: looped by DAG — each (check_type, column) becomes one task
