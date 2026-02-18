@@ -20,5 +20,8 @@ airflow.db
 airflow.cfg
 logs/
 
+# Data files
+data/
+
 # OS
 .DS_Store

@@ -7,7 +7,7 @@ DQ_CHECKS = {
 
     "null": [
         "month", "town", "flat_type", "block", "street_name",
-        "storey_range", "floor_area", "flat_model",
+        "storey_range", "floor_area_sqm", "flat_model",
         "lease_commence_date", "resale_price",
     ],
 
@@ -18,17 +18,22 @@ DQ_CHECKS = {
             "CLEMENTI", "GEYLANG", "HOUGANG", "JURONG EAST", "JURONG WEST",
             "KALLANG/WHAMPOA", "LIM CHU KANG", "MARINE PARADE", "PASIR RIS",
             "QUEENSTOWN", "SEMBAWANG", "SENGKANG", "SERANGOON", "TAMPINES",
-            "TOA PAYOH", "WOODLANDS", "YISHUN",
+            "TOA PAYOH", "WOODLANDS", "YISHUN","PUNGGOL",
         ]},
         "flat_type": {"allowed_values": [
             "1 ROOM", "2 ROOM", "3 ROOM", "4 ROOM", "5 ROOM",
-            "EXECUTIVE", "MULTI-GENERATION",
+            "EXECUTIVE", "MULTI-GENERATION","MULTI GENERATION",
         ]},
         "flat_model": {"allowed_values": [
-            "2-ROOM", "APARTMENT", "IMPROVED", "IMPROVED-MAISONETTE",
-            "MAISONETTE", "MODEL A", "MODEL A-MAISONETTE", "MULTI GENERATION",
-            "NEW GENERATION", "PREMIUM APARTMENT", "SIMPLIFIED",
-            "STANDARD", "TERRACE",
+            "IMPROVED", "NEW GENERATION", "MODEL A", "STANDARD", "SIMPLIFIED",
+            "MODEL A-MAISONETTE", "APARTMENT", "MAISONETTE", "TERRACE",
+            "2-ROOM", "IMPROVED-MAISONETTE", "MULTI GENERATION",
+            "PREMIUM APARTMENT", "Improved", "New Generation", "Model A",
+            "Standard", "Apartment", "Simplified", "Model A-Maisonette",
+            "Maisonette", "Multi Generation", "Adjoined flat",
+            "Premium Apartment", "Terrace", "Improved-Maisonette",
+            "Premium Maisonette", "2-room", "Model A2", "DBSS", "Type S1",
+            "Type S2", "Premium Apartment Loft", "3Gen",
         ]},
     },
 
@@ -55,5 +60,5 @@ DUPLICATE_CHECK = {
 RESALE_PRICE_OUTLIER_CHECK = {
     "column": "resale_price",
     "threshold_pct": 0.20,
-    "group_by": ["month", "flat_type", "block", "street_name", "storey_range", "floor_area"],
+    "group_by": ["month", "flat_type", "block", "street_name", "storey_range", "floor_area_sqm"],
 }

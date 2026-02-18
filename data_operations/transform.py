@@ -7,7 +7,7 @@ import pandas as pd
 import hashlib
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from config.CONFIG_hdb_resales_price import STAGE_DATA_DIR, PROD_DATA_DIR
+from config.CONFIG_hdb_resales_price import PROD_DATA_DIR
 
 
 def calculate_remaining_lease(df, reference_date=None):
@@ -23,11 +23,12 @@ def calculate_remaining_lease(df, reference_date=None):
 
 
 def create_resale_identifier(df):
+    df["resale_price"] = pd.to_numeric(df["resale_price"], errors="coerce")
+
     avg = df.groupby(["month", "town", "flat_type"])["resale_price"].mean().rename("avg_price")
     df = df.join(avg, on=["month", "town", "flat_type"])
 
-    block_digits = df["block"].astype(str).str.replace(r"\D", "", regex=True).str[:3].str.zfill(3).where(
-                       df["block"].astype(str).str.replace(r"\D", "", regex=True) != "", "000")
+    block_digits = df["block"].astype(str).str.replace(r"\D", "", regex=True).str[:3].str.zfill(3)
     price_digits = df["avg_price"].astype(int).astype(str).str[:2].str.zfill(2)
     month_digits = pd.to_datetime(df["month"], format="%Y-%m").dt.strftime("%m")
     town_char    = df["town"].str.strip().str[0].str.upper()

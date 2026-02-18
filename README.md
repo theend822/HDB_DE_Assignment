@@ -3,9 +3,6 @@
 ---
 
 ## Design Philosophy
-
-Keep the DAG dumb, keep the code clean, keep the config honest.
-
 - The DAG only wires tasks together — no logic, no conditionals, no function definitions
 - All business logic lives in `data_operations/`, independently testable and reusable
 - Config drives what checks run and on which columns — adding a check means editing config, not code
@@ -30,7 +27,7 @@ HDB/
 │   └── hdb_resales_price.py          # Airflow DAG — task definitions only, no business logic
 │
 ├── notebooks/
-│   └── exploration.ipynb             # Prototype before migrating to data_operations/
+│   └── execution.ipynb              # Prototype before migrating to data_operations/
 │
 └── data/
     ├── raw/                          # Per-dataset CSVs + merged_raw.csv
@@ -63,11 +60,10 @@ data/prod/transformed.csv    ← with remaining_lease + resale_identifier
 data/prod/hashed.csv         ← with resale_identifier_hash instead
 ```
 
-This makes every intermediate result inspectable and lets any stage be re-run independently.
 
 ### b. DAG
 
-The DAG has four logical blocks — all task definitions first, dependencies at the end:
+The DAG has four logical blocks
 
 ```python
 # Block 1: Extract
@@ -87,40 +83,47 @@ transform_task
 download_tasks >> merge_task >> all_dqc >> separate_task >> transform_task
 ```
 
-Separating task definitions from dependency wiring makes both easier to read and change.
-
 ---
 
 ## Design Considerations
 
-### a. Separation of Concerns
+### a. Modular Design
 
-The DAG contains zero business logic — only `PythonOperator` definitions with `op_kwargs`. All logic lives in `data_operations/`. The config files drive what runs; the code defines how.
+The pipeline is broken into independent modules, each with a single responsibility:
 
-One pipeline = three files, all sharing the same `_{pipeline_name}` suffix:
+| Module | Location | Responsibility |
+|--------|----------|----------------|
+| **Pipeline** | `dags/hdb_resales_price.py` | Task wiring only — no business logic |
+| **Functions** | `data_operations/` | Reusable extract, validate, transform functions |
+| **DQC config** | `config/DQC_hdb_resales_price.py` | DQ check rules and thresholds |
+| **Pipeline config** | `config/CONFIG_hdb_resales_price.py` | API config, dataset IDs, folder paths |
 
-| Prefix | File | Purpose |
-|--------|------|---------|
-| *(none)* | `dags/hdb_resales_price.py` | Airflow task definitions |
-| `DQC_` | `config/DQC_hdb_resales_price.py` | DQ check rules |
-| `CONFIG_` | `config/CONFIG_hdb_resales_price.py` | API config and paths |
+This separation means:
+- Functions in `data_operations/` are independently testable and reusable across pipelines
+- Adding or modifying a DQ check means editing config, not touching the DAG or functions
+- The DAG stays clean — it only wires tasks together using `PythonOperator` + `op_kwargs`
 
-Adding a new pipeline means adding one file per prefix.
+All files belonging to one pipeline share the same `_{pipeline_name}` suffix (`hdb_resales_price`). Adding a new pipeline means adding one DAG, one CONFIG, one DQC — all with a matching suffix. This makes it immediately clear which files belong together and keeps maintenance straightforward.
 
-### b. Naming Convention
-
-Task variables use `_task` as suffix (`merge_task`, `separate_task`) to distinguish them from plain Python objects. Task IDs mirror the function or check they call (`check_duplicates`, `null__month`, `download_1990_1999`).
-
-### c. Config-Driven Pipeline
+### b. Config-Driven Pipeline
 
 DQ checks are defined entirely in `DQC_hdb_resales_price.py`. The DAG loops over `DQ_CHECKS` and auto-generates one Airflow task per `(check_type, column)` pair — no manual task creation needed when a new check is added.
 
 The two standalone checks (duplicates, outlier) follow the same pattern: their parameters come from `DUPLICATE_CHECK` and `RESALE_PRICE_OUTLIER_CHECK` and are passed directly as `op_kwargs` via `**unpacking`. The DAG never needs to know what the parameters mean.
 
-### d. `fail_sum` Across Parallel DQC Tasks
+### c. `fail_sum` Across Parallel DQC Tasks
 
 Each DQC check runs as a separate Airflow task in parallel on the same static `merged_raw.csv`. Writing to a shared file concurrently would cause race conditions.
 
 The solution: each check writes its own 0/1 result column (1 = row failed) to a uniquely named file in `stage/dqc_results/`. The `separate_valid_failed` task then reads all result files and sums them row-by-row — any row with `fail_sum > 0` failed at least one check and goes to `non_valid_records.csv`.
 
 This gives a clean audit trail: each result file shows exactly which rows failed which check.
+
+## Future Improvements
+### a.Dataset Partition
+
+In the context of this assignment, dataset is saved and passed around in csv. In real world, for better query performance, merged dataset should be properly partitioned - by year or by combination of registration / approval date
+
+### b. More Customized DQC
+
+Only one customized DQC is implemented in this assignment to monitor the fluctuation of resale prices in each self-defined group. However, in real world, to keep close eye on HDB resale prices, more customized and realistic DQC should be created and implemented in the pipeline. 
