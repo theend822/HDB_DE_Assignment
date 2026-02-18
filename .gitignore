@@ -21,7 +21,7 @@ airflow.cfg
 logs/
 
 # Data files
-data/prod
+data/prod/*.csv
 
 # OS
 .DS_Store
