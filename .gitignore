@@ -21,7 +21,8 @@ airflow.cfg
 logs/
 
 # Data files
-data/
+data/prod
 
 # OS
 .DS_Store
+.claude/settings.local.json
